@@ -1,0 +1,3 @@
+packages:
+  - 'server'
+  # - 'client' # We'll manage client deps separately via Vite for simplicity

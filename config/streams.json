@@ -1,0 +1,36 @@
+[
+	{
+		"id": "stream1",
+		"name": "Main Mix",
+		"rtpPort": 5001,
+		"ssrc": 1111,
+		"payloadType": 100,
+		"codec": {
+		"mimeType": "audio/opus",
+		"clockRate": 48000,
+		"channels": 2,
+		"parameters": {
+			"useinbandfec": 1,
+			"minptime": 10,
+			"usedtx": 0
+			}
+		}
+	},
+	{
+		"id": "stream2",
+		"name": "Talkback",
+		"rtpPort": 5002,
+		"ssrc": 2222,
+		"payloadType": 100,
+		"codec": {
+		"mimeType": "audio/opus",
+		"clockRate": 48000,
+		"channels": 1,
+		"parameters": {
+			"useinbandfec": 1,
+			"minptime": 10,
+			"usedtx": 1
+			}
+		}
+	}
+]

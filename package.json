@@ -1,23 +1,17 @@
 {
   "name": "audio-broadcast",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "private": true,
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "dependencies": {
-    "express": "^5.1.0",
-    "mediasoup": "^3.15.7",
-    "ws": "^8.18.1"
+    "dev:server": "pnpm --filter server dev",
+    "build:server": "pnpm --filter server build",
+    "start:server": "pnpm --filter server start",
+    "dev:client": "cd client && pnpm dev",
+    "build:client": "cd client && pnpm build",
+    "dev": "pnpm run dev:client & pnpm run dev:server",
+    "build": "pnpm run build:server && pnpm run build:client"
   },
   "devDependencies": {
-    "@types/express": "^5.0.1",
-    "@types/node": "^22.14.1",
-    "@types/ws": "^8.18.1",
-    "vite": "^6.3.2"
+    "typescript": "^5.0.0"
   }
 }

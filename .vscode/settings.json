@@ -1,0 +1,7 @@
+{
+    "[json]": {
+        "editor.insertSpaces": false,
+        "editor.tabSize": 4,
+        "editor.formatOnSave": false
+    }
+}
