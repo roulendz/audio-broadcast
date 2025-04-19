@@ -1,3 +1,4 @@
+// FilePath: server/src/config.ts
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
@@ -70,41 +71,16 @@ export const config = {
             ] as types.WorkerLogTag[],
         },
         router: {
-            mediaCodecs: [ // Define codecs supported by the router globally
-               // We primarily care about Opus from GStreamer here
-               // Clients will negotiate based on what the router offers
-                {
-                    kind: 'audio',
-                    mimeType: 'audio/opus',
-                    clockRate: 48000,
-                    channels: 2, // Supports Stereo
-                    parameters: {
-                        useinbandfec: 1,
-                        usedtx: 1, // Allow DTX generally
-                        minptime: 10
-                    },
-                    rtcpFeedback: [ { type: 'transport-cc' } ]
-                },
-                {
-                    kind: 'audio',
-                    mimeType: 'audio/opus',
-                    clockRate: 48000,
-                    channels: 1, // Supports Mono
-                    parameters: {
-                        useinbandfec: 1,
-                        usedtx: 1, // Allow DTX for voice
-                        minptime: 10
-                    },
-                    rtcpFeedback: [ { type: 'transport-cc' } ]
-                }
-               // Add other codecs if you plan to support them from WebRTC clients (not needed for GStreamer ingest only)
-                // {
-                //     kind       : 'audio',
-                //     mimeType   : 'audio/PCMU',
-                //     clockRate  : 8000,
-                //     channels   : 1
-                // }
-            ] as RtpCodecCapability[], // Ensure type correctness
+            mediaCodecs: [
+            {
+                kind: 'audio',
+                mimeType: 'audio/PCMU',  // μ-law codec
+                clockRate: 8000,         // 8000 Hz
+                channels: 1,             // Mono
+                rtcpFeedback: [{ type: 'transport-cc' }]
+            }
+            // Remove the second Opus entry with channels: 1
+        ] as RtpCodecCapability[],
         },
         // Transport settings
         webRtcTransport: {

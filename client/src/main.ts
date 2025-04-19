@@ -1,4 +1,4 @@
-// import './styles.css'; // Import Tailwind styles
+import './styles.css'; // Import Tailwind styles
 import { connectWebSocket, disconnectWebSocket } from './signaling/socket';
 import { initializeWebRTC, disconnect as disconnectWebRTC } from './webrtc/mediasoupClient';
 import { setupUI } from './ui/StreamSelector';

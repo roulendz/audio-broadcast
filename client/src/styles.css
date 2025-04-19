@@ -1,0 +1,43 @@
+/* Custom styles for the Local Audio Stream application */
+
+/* Glass effect for containers */
+.bg-glass {
+  background-color: rgba(30, 41, 59, 0.4);
+}
+
+.backdrop-blur-glass {
+  backdrop-filter: blur(8px);
+}
+
+.border-glass {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Custom audio player styling */
+audio::-webkit-media-controls-panel {
+  background-color: rgba(30, 41, 59, 0.6);
+}
+
+audio::-webkit-media-controls-play-button,
+audio::-webkit-media-controls-volume-slider {
+  filter: invert(100%);
+}
+
+/* Animations */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Container for stats display */
+#stats-overlay {
+  transition: opacity 0.3s ease-in-out;
+}

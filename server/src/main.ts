@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import http from 'http';
 import https from 'https'; // If using HTTPS later
 import WebSocket from 'ws';
@@ -27,18 +27,30 @@ async function run() {
     console.log(`Serving static files from: ${clientBuildPath}`);
     app.use(express.static(clientBuildPath));
 
-    // Serve index.html for any route not handled by static files (for SPA routing)
-    app.get('*', (req, res) => {
-        res.sendFile(path.join(clientBuildPath, 'index.html'));
+    // The most basic approach - disable TypeScript checking for this line only
+    // @ts-ignore
+    // Add this instead:
+    app.use((req, res, next) => {
+        // Skip URLs that contain problematic patterns
+        if (req.url.includes('://')) {
+            return res.status(404).send('Invalid URL format');
+        }
+        
+        // For GET requests to non-file paths, serve the SPA index
+        if (req.method === 'GET' && !req.url.includes('.')) {
+            return res.sendFile(path.join(clientBuildPath, 'index.html'));
+        }
+        
+        // Otherwise continue to the next middleware
+        next();
     });
-
 
     // --- Create HTTP/S Server ---
     // TODO: Add HTTPS setup if needed for non-local deployment
     const httpServer = http.createServer(app);
 
     httpServer.listen(config.server.port, config.server.ip, () => {
-        console.log(`HTTP server listening on http://<span class="math-inline">\{config\.server\.ip\}\:</span>{config.server.port}`);
+        console.log(`HTTP server listening on http://${config.server.ip}:${config.server.port}`);
     });
 
     // --- Create WebSocket Server ---
@@ -53,7 +65,7 @@ async function run() {
     });
 
     wsServer.on('listening', () => {
-        console.log(`WebSocket server listening on ws://<span class="math-inline">\{config\.server\.ip\}\:</span>{config.server.port}`); // Adjust port if separate
+        console.log(`HTTP server listening on http://${config.server.ip}:${config.server.port}`);
     });
 
     wsServer.on('error', (error) => {

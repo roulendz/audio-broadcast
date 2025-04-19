@@ -14,17 +14,14 @@ type MessageListener = (action: string, payload: any) => void;
 const listeners = new Set<MessageListener>();
 
 function getWebSocketUrl(): string {
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'; // proto is used below
-    // Use the same host as the HTTP server, but the WS port from server config
-    // This assumes HTTP and WS are on the same host, potentially different ports
-    // If using separate WS port (e.g., 3001), hardcode or fetch config:
-    const wsPort = 3001; // MATCH server/.env WEBSOCKET_PORT if different from HTTP port
-
-    // *** FIX: Correct template literal usage ***
-    return `${proto}//${window.location.hostname}:${wsPort}`;
-
-    // If WS runs on the same port as HTTP:
-    // return `${proto}//${window.location.host}`;
+    if (import.meta.env.DEV) {
+        // In dev, use the Vite proxy
+        return `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`;
+    } else {
+        // In production, direct connection
+        const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        return `${proto}//${window.location.hostname}:3001`;
+    }
 }
 
 export function connectWebSocket(): Promise<void> {

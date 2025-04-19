@@ -145,11 +145,11 @@ async function createRecvTransport(
     iceCandidates: types.IceCandidate[],
     dtlsParameters: types.DtlsParameters
 ) {
-    if (!device) {
-         console.error("Device not loaded, cannot create transport.");
-         updateStatus("Device not ready");
-         dispatchConnectionState('failed');
-        return;
+if (!device) {
+        console.error("Device not loaded, cannot create transport.");
+        updateStatus("Device not ready");
+        dispatchConnectionState('failed');
+    return;
     }
     if (recvTransport && !recvTransport.closed) {
         console.log("Closing existing RECV transport before creating new one.");
@@ -164,8 +164,12 @@ async function createRecvTransport(
             iceParameters,
             iceCandidates,
             dtlsParameters,
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' } // Add another for redundancy
+            ]
         });
-
+        console.log("Attaching transport to event listeners...");
         // --- Transport Events ---
         recvTransport.on('connect', (
             { dtlsParameters: connectDtlsParams }: { dtlsParameters: types.DtlsParameters },
@@ -211,14 +215,14 @@ async function createRecvTransport(
                     break;
                 case 'closed':
                     console.log('Transport closed.');
-                     if (recvTransport && recvTransport.id === transportId && recvTransport.closed) {
-                         recvTransport = null;
-                     }
+                    if (recvTransport && recvTransport.id === transportId && recvTransport.closed) {
+                        recvTransport = null;
+                    }
                     closeConsumer();
                     break;
             }
         });
-
+        console.log("Listeners attached.")
         console.log("RECV Transport created client-side.");
 
     } catch (error) {
@@ -267,12 +271,12 @@ function requestConsume(streamId: string) {
     if (!recvTransport || recvTransport.connectionState !== 'connected') {
         console.error(`Cannot consume stream ${streamId}, transport not ready or not connected (State: ${recvTransport?.connectionState}).`);
         (window as any).pendingStreamId = streamId;
-         if (!recvTransport || ['failed', 'closed'].includes(recvTransport.connectionState)) {
-             console.log("Requesting new transport before consuming...");
-             sendSignal('createWebRtcTransport');
-         } else {
-             dispatchConnectionState(recvTransport?.connectionState || "connecting");
-         }
+        if (!recvTransport || ['failed', 'closed'].includes(recvTransport.connectionState)) {
+            console.log("Requesting new transport before consuming...");
+            sendSignal('createWebRtcTransport');
+        } else {
+            dispatchConnectionState(recvTransport?.connectionState || "connecting");
+        }
         return;
     }
     console.log(`Requesting to consume stream: ${streamId}`);
@@ -288,8 +292,8 @@ async function handleConsumeReady(consumerInfo: ConsumerInfo) {
         return;
     }
     if (!device?.loaded) {
-      console.error("Received consumer info, but device is not loaded!");
-      return;
+        console.error("Received consumer info, but device is not loaded!");
+        return;
     }
 
     console.log("Creating consumer client-side:", consumerInfo);
@@ -316,37 +320,37 @@ async function handleConsumeReady(consumerInfo: ConsumerInfo) {
             audioElement.srcObject = stream;
             console.log("Audio track added to element. Attempting play...");
 
-             audioElement.play().then(() => {
-                 console.log("Audio playback started successfully.");
-                 updateStatus(`Listening to: ${getStreamNameById(consumerInfo.streamId)}`);
-                 dispatchConnectionState('connected');
-                 startStatsPolling();
-             }).catch(e => {
-                 console.warn("Audio play failed (likely needs user interaction first):", e);
-                 updateStatus("Ready. Click page or player to start audio.");
-                 dispatchConnectionState('connected');
+            audioElement.play().then(() => {
+                console.log("Audio playback started successfully.");
+                updateStatus(`Listening to: ${getStreamNameById(consumerInfo.streamId)}`);
+                dispatchConnectionState('connected');
+                startStatsPolling();
+            }).catch(e => {
+                console.warn("Audio play failed (likely needs user interaction first):", e);
+                updateStatus("Ready. Click page or player to start audio.");
+                dispatchConnectionState('connected');
 
-                 const resumeAudio = () => {
-                     if (audioElement.paused) {
-                         console.log("Attempting to resume audio playback via interaction...");
-                         audioElement.play().then(() => {
-                             console.log("Audio playback resumed via interaction.");
-                             updateStatus(`Listening to: ${getStreamNameById(consumerInfo.streamId)}`);
-                             startStatsPolling();
-                         }).catch(err => {
-                             console.error("Audio play still failed after interaction:", err);
-                             updateStatus("Could not start audio.");
-                             dispatchConnectionState('failed');
-                         });
-                     }
-                     window.removeEventListener('click', resumeAudio);
-                     window.removeEventListener('touchstart', resumeAudio);
-                     audioElement.removeEventListener('click', resumeAudio);
-                 };
-                 window.addEventListener('click', resumeAudio, { once: true });
-                 window.addEventListener('touchstart', resumeAudio, { once: true });
-                 audioElement.addEventListener('click', resumeAudio, { once: true });
-             });
+                const resumeAudio = () => {
+                    if (audioElement.paused) {
+                        console.log("Attempting to resume audio playback via interaction...");
+                        audioElement.play().then(() => {
+                            console.log("Audio playback resumed via interaction.");
+                            updateStatus(`Listening to: ${getStreamNameById(consumerInfo.streamId)}`);
+                            startStatsPolling();
+                        }).catch(err => {
+                            console.error("Audio play still failed after interaction:", err);
+                            updateStatus("Could not start audio.");
+                            dispatchConnectionState('failed');
+                        });
+                    }
+                    window.removeEventListener('click', resumeAudio);
+                    window.removeEventListener('touchstart', resumeAudio);
+                    audioElement.removeEventListener('click', resumeAudio);
+                };
+                window.addEventListener('click', resumeAudio, { once: true });
+                window.addEventListener('touchstart', resumeAudio, { once: true });
+                audioElement.addEventListener('click', resumeAudio, { once: true });
+            });
 
         } else {
             console.error("Audio element not found!");
@@ -365,10 +369,10 @@ async function handleConsumeReady(consumerInfo: ConsumerInfo) {
         currentConsumer.observer.on('close', () => {
             const closedConsumerId = currentConsumer?.id;
             console.log(`Consumer observer closed [ID: ${closedConsumerId}]`);
-             if (currentConsumer && currentConsumer.id === closedConsumerId) {
-                 closeConsumer();
-                 dispatchConnectionState("closed");
-             }
+            if (currentConsumer && currentConsumer.id === closedConsumerId) {
+                closeConsumer();
+                dispatchConnectionState("closed");
+            }
         });
 
     } catch (error) {

@@ -1,3 +1,4 @@
+// Filepath: server/src/signaling/handler.ts
 import WebSocket from 'ws';
 import { v4 as uuidv4 } from 'uuid';
 import { getInitializedRouter } from '../mediasoup/setup';
@@ -46,6 +47,9 @@ export function handleWebSocketConnection(ws: WebSocket) {
 
                 case 'consume':
                     await handleConsume(extWs, msg.payload as ConsumePayload);
+                    break;
+                case 'setRtpCapabilities':
+                    handleClientRtpCapabilities(extWs, msg.payload);
                     break;
 
                 // Add other cases like 'pauseConsumer', 'resumeConsumer' if needed
@@ -238,17 +242,3 @@ export function handleClientRtpCapabilities(ws: ExtendedWebSocket, payload: { rt
         console.warn(`Client ${ws.clientId} sent invalid RTP capabilities`);
     }
 }
-
-
-// --- Augment ExtendedWebSocket type in types.ts ---
-// Add this line in server/src/types.ts inside ExtendedWebSocket interface:
-// rtpCapabilities?: RtpCapabilities;
-
-
-// --- Modify handleWebSocketConnection ---
-// In handleWebSocketConnection, add a case for the client sending its caps:
-/*
-            case 'setRtpCapabilities':
-                handleClientRtpCapabilities(extWs, msg.payload);
-                break;
-*/
