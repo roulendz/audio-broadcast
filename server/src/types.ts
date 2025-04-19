@@ -1,3 +1,4 @@
+// FilePath: server/src/types.ts
 import WebSocket from 'ws';
 import type { types } from 'mediasoup';
 

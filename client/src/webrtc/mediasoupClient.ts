@@ -60,7 +60,7 @@ const handleSignalMessage = (action: string, payload: any) => {
             break;
 
         case 'transportCreated':
-            console.log("Received transport created:", payload);
+            console.log("Received transport params:", JSON.stringify(payload, null, 2));
             createRecvTransport(
                 payload.transportId,
                 payload.iceParameters as types.IceParameters,
@@ -108,6 +108,7 @@ async function loadDeviceIfNeeded() {
     try {
         console.log("Loading mediasoup device...");
         device = new mediasoupClient.Device();
+        console.log("Loading device with Router RTP Capabilities:", JSON.stringify(serverRouterCapabilities));
         await device.load({ routerRtpCapabilities: serverRouterCapabilities });
         console.log("Device loaded successfully.");
         if (device.rtpCapabilities) {
@@ -169,7 +170,7 @@ if (!device) {
                 { urls: 'stun:stun1.l.google.com:19302' } // Add another for redundancy
             ]
         });
-        console.log("Attaching transport to event listeners...");
+        console.log(`Transport created. ID: ${recvTransport.id}, Closed: ${recvTransport.closed}, ConnectionState: ${recvTransport.connectionState}, AppData:`, recvTransport.appData);
         // --- Transport Events ---
         recvTransport.on('connect', (
             { dtlsParameters: connectDtlsParams }: { dtlsParameters: types.DtlsParameters },

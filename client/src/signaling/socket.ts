@@ -14,14 +14,9 @@ type MessageListener = (action: string, payload: any) => void;
 const listeners = new Set<MessageListener>();
 
 function getWebSocketUrl(): string {
-    if (import.meta.env.DEV) {
-        // In dev, use the Vite proxy
-        return `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`;
-    } else {
-        // In production, direct connection
-        const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        return `${proto}//${window.location.hostname}:3001`;
-    }
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    // Use the same host and port as the main website
+    return `${proto}//${window.location.host}:3001`;
 }
 
 export function connectWebSocket(): Promise<void> {
