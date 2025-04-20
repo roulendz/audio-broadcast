@@ -7,13 +7,12 @@ import type { ConsumerInfo } from '../../../server/src/types'; // Ensure this pa
 import { sendSignal, addMessageListener, removeMessageListener } from '../signaling/socket';
 
 // --- Variables ---
-// *** FIX 1: Ensure only ONE declaration for statsIntervalId ***
 let device: types.Device | null = null;
 let recvTransport: types.Transport | null = null;
 let currentConsumer: types.Consumer | null = null;
 let serverRouterCapabilities: types.RtpCapabilities | null = null;
 let availableStreams: { id: string; name: string }[] = [];
-let statsIntervalId: number | null = null; // Single declaration at module scope
+let statsIntervalId: number | null = null;
 
 // --- Helper Functions ---
 function updateStatus(message: string) {
@@ -27,8 +26,7 @@ function getStreamNameById(streamId: string | undefined): string {
     return stream ? stream.name : 'Unknown Stream';
 }
 
-// Type for state parameter will be inferred or explicitly set later if needed
-function dispatchConnectionState(state: string) { // Use string for now, refine if needed
+function dispatchConnectionState(state: string) {
     const streamId = currentConsumer?.appData?.streamId || (window as any).pendingStreamId;
     const event = new CustomEvent('connectionStateChange', {
         detail: { state, streamName: getStreamNameById(streamId) }
@@ -46,7 +44,6 @@ function dispatchConnectionState(state: string) { // Use string for now, refine 
     updateStatus(statusText);
 }
 
-
 // --- Signaling Handler ---
 const handleSignalMessage = (action: string, payload: any) => {
     switch (action) {
@@ -60,12 +57,14 @@ const handleSignalMessage = (action: string, payload: any) => {
             break;
 
         case 'transportCreated':
+            // *** NOTE: Using the version from the previous user message which had iceCandidates commented out ***
+            // *** If you reverted that, adjust this call accordingly ***
             console.log("Received transport params:", JSON.stringify(payload, null, 2));
             createRecvTransport(
                 payload.transportId,
                 payload.iceParameters as types.IceParameters,
-                payload.iceCandidates as types.IceCandidate[],
                 payload.dtlsParameters as types.DtlsParameters
+                // payload.iceCandidates as types.IceCandidate[], // Keep commented if testing without initial candidates
             );
             break;
 
@@ -143,14 +142,14 @@ export function getAvailableStreams(): { id: string; name: string }[] {
 async function createRecvTransport(
     transportId: string,
     iceParameters: types.IceParameters,
-    iceCandidates: types.IceCandidate[],
     dtlsParameters: types.DtlsParameters
+    // iceCandidates: types.IceCandidate[] // Keep commented if testing without initial candidates
 ) {
-if (!device) {
+    if (!device) {
         console.error("Device not loaded, cannot create transport.");
         updateStatus("Device not ready");
         dispatchConnectionState('failed');
-    return;
+        return;
     }
     if (recvTransport && !recvTransport.closed) {
         console.log("Closing existing RECV transport before creating new one.");
@@ -160,24 +159,44 @@ if (!device) {
 
     console.log("Creating RECV transport client-side:", transportId);
     try {
-        recvTransport = device.createRecvTransport({
+        const transportOptions = {
             id: transportId,
             iceParameters,
-            iceCandidates,
+            iceCandidates: [], // Pass empty array if testing without initial candidates
             dtlsParameters,
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' } // Add another for redundancy
+                { urls: 'stun:stun1.l.google.com:19302' }
             ]
-        });
+        };
+        console.log("Attempting to create RecvTransport with options:", JSON.stringify(transportOptions, null, 2));
+        recvTransport = device.createRecvTransport(transportOptions);
+
+        // --- Log state immediately after creation ---
         console.log(`Transport created. ID: ${recvTransport.id}, Closed: ${recvTransport.closed}, ConnectionState: ${recvTransport.connectionState}, AppData:`, recvTransport.appData);
+        try {
+            // Attempt to access underlying PeerConnection - MIGHT NOT WORK OR CHANGE
+            // Accessing private members like _handler._pc is fragile and browser-dependent
+            const pc = (recvTransport as any)._handler?._pc;
+            if (pc) {
+                console.log('Underlying PC signalingState:', pc.signalingState);
+                console.log('Underlying PC iceConnectionState:', pc.iceConnectionState);
+                console.log('Underlying PC connectionState:', pc.connectionState);
+            } else {
+                 console.log('Could not access underlying PeerConnection object.');
+            }
+        } catch (e) { console.error("Error accessing PC internals:", e); }
+        // ------------------------------------------
+
+        console.log("Attaching transport event listeners..."); // Log before attaching
+
         // --- Transport Events ---
         recvTransport.on('connect', (
             { dtlsParameters: connectDtlsParams }: { dtlsParameters: types.DtlsParameters },
             callback: () => void,
             errback: (error: Error) => void
         ) => {
-            console.log("Transport 'connect' event fired. Sending DTLS params to server.");
+            console.log("Transport 'connect' event fired. Sending DTLS params to server."); // Log inside handler
             try {
                 if (!recvTransport) throw new Error("recvTransport became null unexpectedly");
                 sendSignal('connectWebRtcTransport', {
@@ -191,18 +210,16 @@ if (!device) {
             }
         });
 
-        // *** FIX 2: Remove explicit type annotation for state for now ***
         recvTransport.on('connectionstatechange', (state: types.ConnectionState) => {
-            console.log(`Transport connection state changed: ${state}`);
-            // We dispatch the state as a string, the specific type isn't strictly needed here yet
+            console.log(`Transport connection state changed: ${state}`); // Log inside handler
             dispatchConnectionState(state);
 
             switch (state) {
                 case 'connected':
-                    console.log("Transport connected!");
+                    console.log("[connectionstatechange] Transport connected!");
                     const pendingStreamId = (window as any).pendingStreamId;
                     if (pendingStreamId) {
-                        console.log("Consuming pending stream:", pendingStreamId);
+                        console.log("[connectionstatechange] Consuming pending stream:", pendingStreamId);
                         delete (window as any).pendingStreamId;
                         requestConsume(pendingStreamId);
                     }
@@ -216,15 +233,15 @@ if (!device) {
                     break;
                 case 'closed':
                     console.log('Transport closed.');
-                    if (recvTransport && recvTransport.id === transportId && recvTransport.closed) {
-                        recvTransport = null;
-                    }
-                    closeConsumer();
+                     if (recvTransport && recvTransport.id === transportId && recvTransport.closed) {
+                         recvTransport = null; // Clear ref if this specific transport closed
+                     }
+                    closeConsumer(); // Also close consumer if transport closes
                     break;
             }
         });
-        console.log("Listeners attached.")
-        console.log("RECV Transport created client-side.");
+        console.log("Listeners attached."); // Log after attaching
+        console.log("RECV Transport created client-side."); // Log at the end
 
     } catch (error) {
         console.error('Error creating Recv transport:', error);
@@ -237,7 +254,7 @@ if (!device) {
 // --- Consumer Management ---
 export function startConsuming(streamId: string) {
     console.log(`UI requested consumption of stream: ${streamId}`);
-    closeConsumer();
+    closeConsumer(); // Close previous consumer first
 
     if (!device?.loaded) {
         updateStatus("Device not ready. Cannot start stream.");
@@ -246,55 +263,68 @@ export function startConsuming(streamId: string) {
         return;
     }
 
-    if (!recvTransport) {
-        console.log("Transport not ready, requesting creation...");
+    // If transport doesn't exist or is closed/failed, request a new one
+    if (!recvTransport || recvTransport.closed || recvTransport.connectionState === 'failed') {
+        console.log("Transport not ready or closed/failed, requesting creation...");
         dispatchConnectionState("connecting");
-        (window as any).pendingStreamId = streamId;
+        (window as any).pendingStreamId = streamId; // Store intended stream
         sendSignal('createWebRtcTransport');
         return;
     }
 
+    // If transport exists but is connecting/checking, wait for 'connected' state
     if(recvTransport.connectionState !== 'connected'){
         console.warn(`Transport not connected yet (state: ${recvTransport.connectionState}). Will consume when connected.`);
         dispatchConnectionState(recvTransport.connectionState);
-        (window as any).pendingStreamId = streamId;
-        if (recvTransport.connectionState === 'failed' || recvTransport.connectionState === 'closed') {
-            console.log("Transport is failed/closed, requesting a new one...");
-            sendSignal('createWebRtcTransport');
-        }
+        (window as any).pendingStreamId = streamId; // Store intended stream
+        // No need to request transport again if it's 'new', 'connecting', or 'checking'
         return;
     }
 
+    // If transport exists and is connected, proceed to consume
     requestConsume(streamId);
 }
 
 function requestConsume(streamId: string) {
+    // Double-check transport status before sending consume request
     if (!recvTransport || recvTransport.connectionState !== 'connected') {
-        console.error(`Cannot consume stream ${streamId}, transport not ready or not connected (State: ${recvTransport?.connectionState}).`);
-        (window as any).pendingStreamId = streamId;
-        if (!recvTransport || ['failed', 'closed'].includes(recvTransport.connectionState)) {
-            console.log("Requesting new transport before consuming...");
-            sendSignal('createWebRtcTransport');
-        } else {
-            dispatchConnectionState(recvTransport?.connectionState || "connecting");
-        }
+        console.error(`Cannot consume stream ${streamId}, transport not ready or not connected (State: ${recvTransport?.connectionState}). Attempting recovery.`);
+        (window as any).pendingStreamId = streamId; // Store intended stream
+        // If transport is missing or failed/closed, request a new one
+         if (!recvTransport || ['failed', 'closed'].includes(recvTransport.connectionState)) {
+             console.log("Requesting new transport before consuming...");
+             sendSignal('createWebRtcTransport');
+         } else {
+             // If it's 'new'/'connecting'/'checking', just update status and wait
+             dispatchConnectionState(recvTransport?.connectionState || "connecting");
+         }
         return;
     }
     console.log(`Requesting to consume stream: ${streamId}`);
     updateStatus(`Requesting stream: ${getStreamNameById(streamId)}...`);
+    // Ensure client RTP capabilities are available (should have been sent earlier)
+    if (!device?.rtpCapabilities) {
+         console.error("Cannot consume: Client RTP Capabilities missing!");
+         dispatchConnectionState("failed");
+         return;
+    }
+    // Send consume request - server needs client rtpCapabilities, but we sent them with 'setRtpCapabilities'
     sendSignal('consume', { streamId });
 }
 
 
 async function handleConsumeReady(consumerInfo: ConsumerInfo) {
-    // Assuming you added `appData` to ConsumerInfo on the server type definition
     if (!recvTransport) {
         console.error("Received consumer info, but transport is missing!");
         return;
     }
+    if (recvTransport.connectionState !== 'connected') {
+         console.error(`Received consumer info, but transport is not connected (state: ${recvTransport.connectionState})!`);
+         return;
+    }
     if (!device?.loaded) {
-        console.error("Received consumer info, but device is not loaded!");
-        return;
+      console.error("Received consumer info, but device is not loaded!");
+      return;
     }
 
     console.log("Creating consumer client-side:", consumerInfo);
@@ -308,8 +338,8 @@ async function handleConsumeReady(consumerInfo: ConsumerInfo) {
             id: consumerInfo.consumerId,
             producerId: consumerInfo.producerId,
             kind: consumerInfo.kind,
-            rtpParameters: consumerInfo.rtpParameters, // Assuming this matches types.RtpParameters
-            appData: { ...(consumerInfo.appData || {}), streamId: consumerInfo.streamId } // Safely access appData
+            rtpParameters: consumerInfo.rtpParameters,
+            appData: { ...(consumerInfo.appData || {}), streamId: consumerInfo.streamId }
         } as types.ConsumerOptions);
 
         console.log("Consumer created:", currentConsumer);
@@ -321,60 +351,77 @@ async function handleConsumeReady(consumerInfo: ConsumerInfo) {
             audioElement.srcObject = stream;
             console.log("Audio track added to element. Attempting play...");
 
-            audioElement.play().then(() => {
-                console.log("Audio playback started successfully.");
-                updateStatus(`Listening to: ${getStreamNameById(consumerInfo.streamId)}`);
-                dispatchConnectionState('connected');
-                startStatsPolling();
-            }).catch(e => {
-                console.warn("Audio play failed (likely needs user interaction first):", e);
-                updateStatus("Ready. Click page or player to start audio.");
-                dispatchConnectionState('connected');
+            // Attempt to play - handle potential browser restrictions
+             audioElement.play().then(() => {
+                 console.log("Audio playback started successfully.");
+                 updateStatus(`Listening to: ${getStreamNameById(consumerInfo.streamId)}`);
+                 dispatchConnectionState('connected'); // Update overall state
+                 startStatsPolling();
+             }).catch(e => {
+                 console.warn("Audio play failed (likely needs user interaction first):", e);
+                 updateStatus("Ready. Click page or player to start audio.");
+                 dispatchConnectionState('connected'); // Still connected, just needs interaction
 
-                const resumeAudio = () => {
-                    if (audioElement.paused) {
-                        console.log("Attempting to resume audio playback via interaction...");
-                        audioElement.play().then(() => {
-                            console.log("Audio playback resumed via interaction.");
-                            updateStatus(`Listening to: ${getStreamNameById(consumerInfo.streamId)}`);
-                            startStatsPolling();
-                        }).catch(err => {
-                            console.error("Audio play still failed after interaction:", err);
-                            updateStatus("Could not start audio.");
-                            dispatchConnectionState('failed');
-                        });
-                    }
-                    window.removeEventListener('click', resumeAudio);
-                    window.removeEventListener('touchstart', resumeAudio);
-                    audioElement.removeEventListener('click', resumeAudio);
-                };
-                window.addEventListener('click', resumeAudio, { once: true });
-                window.addEventListener('touchstart', resumeAudio, { once: true });
-                audioElement.addEventListener('click', resumeAudio, { once: true });
-            });
+                 // --- Add click listeners to resume ---
+                 const resumeAudio = () => {
+                     if (audioElement.paused) {
+                         console.log("Attempting to resume audio playback via interaction...");
+                         audioElement.play().then(() => {
+                             console.log("Audio playback resumed via interaction.");
+                             updateStatus(`Listening to: ${getStreamNameById(consumerInfo.streamId)}`);
+                             startStatsPolling();
+                             // Remove listeners after successful play
+                             window.removeEventListener('click', resumeAudio);
+                             window.removeEventListener('touchstart', resumeAudio);
+                             audioElement.removeEventListener('click', resumeAudio);
+                         }).catch(err => {
+                             console.error("Audio play still failed after interaction:", err);
+                             updateStatus("Could not start audio.");
+                             dispatchConnectionState('failed');
+                         });
+                     } else {
+                         // If already playing, just remove listeners
+                         window.removeEventListener('click', resumeAudio);
+                         window.removeEventListener('touchstart', resumeAudio);
+                         audioElement.removeEventListener('click', resumeAudio);
+                     }
+                 };
+                 // Use { once: true } if you only want the first interaction to trigger it
+                 window.addEventListener('click', resumeAudio, { once: true });
+                 window.addEventListener('touchstart', resumeAudio, { once: true });
+                 audioElement.addEventListener('click', resumeAudio, { once: true });
+                 // ------------------------------------
+             });
 
         } else {
             console.error("Audio element not found!");
         }
 
+        // --- Consumer Event Listeners ---
         currentConsumer.on('trackended', () => {
             console.warn('Consumer track ended.');
-            closeConsumer();
-            dispatchConnectionState("closed");
+            closeConsumer(); // Clean up consumer
+            dispatchConnectionState("closed"); // Reflect state change
         });
 
         currentConsumer.on('transportclose', () => {
             console.warn('Consumer transport closed.');
+            // Consumer will be closed implicitly, maybe update UI state?
+            // closeConsumer() might be called by transport's 'closed' state change anyway
         });
 
         currentConsumer.observer.on('close', () => {
-            const closedConsumerId = currentConsumer?.id;
+            const closedConsumerId = currentConsumer?.id; // Capture ID before nulling
             console.log(`Consumer observer closed [ID: ${closedConsumerId}]`);
-            if (currentConsumer && currentConsumer.id === closedConsumerId) {
-                closeConsumer();
-                dispatchConnectionState("closed");
-            }
+             if (currentConsumer && currentConsumer.id === closedConsumerId) {
+                 closeConsumer(); // Ensure cleanup if observer closes it
+                 // Update state only if transport didn't already close it
+                 if (!recvTransport || !recvTransport.closed) {
+                     dispatchConnectionState("closed");
+                 }
+             }
         });
+        // --- End Consumer Event Listeners ---
 
     } catch (error) {
         console.error('Error creating consumer client-side:', error);
@@ -392,13 +439,14 @@ function closeConsumer() {
         if (!currentConsumer.closed) {
             currentConsumer.close();
         }
-        currentConsumer = null;
+        currentConsumer = null; // Clear reference
 
+        // Clear audio element
         const audioElement = document.getElementById('remote-audio') as HTMLAudioElement;
         if (audioElement) {
             audioElement.srcObject = null;
             audioElement.pause();
-            audioElement.load();
+            audioElement.load(); // Reset element
         }
         console.log(`Consumer [ID: ${consumerId}] closed and cleaned up.`);
     }
@@ -406,7 +454,7 @@ function closeConsumer() {
 
 // --- Stats Polling ---
 function startStatsPolling() {
-     if (statsIntervalId !== null) return; // Already polling
+    if (statsIntervalId !== null) return; // Already polling
     stopStatsPolling(); // Clear just in case
 
     const statsOverlayEl = document.getElementById('stats-overlay');
@@ -439,6 +487,7 @@ function stopStatsPolling() {
 
 
 // --- Stats Overlay Update Logic ---
+// (Keep existing updateStatsOverlay and clearStatsOverlay functions)
 function updateStatsOverlay(stats: RTCStatsReport) {
     let currentBitrate = 0;
     let currentJitter = 0; // in ms
@@ -515,9 +564,9 @@ function updateStatsOverlay(stats: RTCStatsReport) {
 
 function clearStatsOverlay() {
      const updateElementText = (id: string, value: string) => {
-        const el = document.getElementById(id);
-        if (el) el.textContent = value;
-    };
+         const el = document.getElementById(id);
+         if (el) el.textContent = value;
+     };
      updateElementText('stats-codec', 'N/A');
      updateElementText('stats-bitrate', '0 kbps');
      updateElementText('stats-jitter', '0.00 ms');
@@ -540,21 +589,19 @@ export function disconnect() {
     if (recvTransport && !recvTransport.closed) {
         recvTransport.close();
     }
-    recvTransport = null;
+    recvTransport = null; // Clear transport ref
 
     if (device) {
-        device = null;
-        console.log("Device reference removed.");
+        // Don't nullify device, maybe just mark as not loaded? Or let it be for potential reconnect?
+        // device = null; // Keeping device allows potential re-init without full page reload
+        console.log("Device reference kept, transport closed.");
     }
     removeMessageListener(handleSignalMessage);
     dispatchConnectionState("closed");
-    serverRouterCapabilities = null;
-    availableStreams = [];
+    // Keep serverRouterCapabilities? Or clear?
+    // serverRouterCapabilities = null;
+    // availableStreams = []; // Maybe keep available streams unless page reloads?
     delete (window as any).pendingStreamId;
-
-    // *** FIX 3: Remove direct call to populateStreamSelector ***
-    // Resetting UI should be handled by UI component listening to 'connectionStateChange' event
-    // populateStreamSelector([]); // REMOVED
 
     clearStatsOverlay();
 }

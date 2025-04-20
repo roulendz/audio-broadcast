@@ -8,46 +8,48 @@ let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 5;
 const RECONNECT_DELAY = 3000; // 3 seconds
 
+// Define ports explicitly (match server setup)
+const SECURE_WS_PORT = 3001;
+const INSECURE_WS_PORT = 3002; // Must match the new port in main.ts
 
 // Define listeners type
 type MessageListener = (action: string, payload: any) => void;
 const listeners = new Set<MessageListener>();
 
 function getWebSocketUrl(): string {
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    // Use the same host and port as the main website
-    return `${proto}//${window.location.host}:3001`;
+    const isSecure = window.location.protocol === 'https:';
+    const proto = isSecure ? 'wss:' : 'ws:';
+    const port = isSecure ? SECURE_WS_PORT : INSECURE_WS_PORT;
+    // Use the hostname from the browser's location bar
+    const host = window.location.hostname;
+    return `${proto}//${host}:${port}`;
 }
 
 export function connectWebSocket(): Promise<void> {
     if (ws && ws.readyState === WebSocket.OPEN) {
         return Promise.resolve();
     }
-    // If already connecting, return the existing promise
     if (connectPromise) {
         return connectPromise;
     }
 
     connectPromise = new Promise((resolve, reject) => {
         const url = getWebSocketUrl();
-        console.log(`Connecting WebSocket to ${url}...`);
+        console.log(`Connecting WebSocket to ${url}...`); // Log will show which URL is used
         ws = new WebSocket(url);
 
         ws.onopen = () => {
             console.log('WebSocket connected.');
-            reconnectAttempts = 0; // Reset on successful connection
-            // Process queued messages
+            reconnectAttempts = 0;
             messageQueue.forEach(msg => ws?.send(msg));
             messageQueue = [];
-            connectPromise = null; // Clear promise on success
+            connectPromise = null;
             resolve();
         };
 
         ws.onmessage = (event) => {
             try {
                 const data: SignalMessage = JSON.parse(event.data);
-                // console.log('WS Received:', data.action, data.payload);
-                // Notify all listeners
                 listeners.forEach(listener => listener(data.action, data.payload));
             } catch (error) {
                 console.error('Error parsing WebSocket message:', error);
@@ -56,45 +58,40 @@ export function connectWebSocket(): Promise<void> {
 
         ws.onerror = (event) => {
             console.error('WebSocket error:', event);
-             // Don't reject immediately on error, let onclose handle reconnect
-             // connectPromise = null; // Clear promise on error
-             // reject(new Error('WebSocket connection error'));
+            // Don't reject immediately, let onclose handle reconnect
         };
 
         ws.onclose = (event) => {
             console.log(`WebSocket closed. Code: ${event.code}, Reason: ${event.reason}. Attempting reconnect...`);
             ws = null;
-            connectPromise = null; // Clear promise on close
+            connectPromise = null;
 
             if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
                 reconnectAttempts++;
                 setTimeout(() => {
-                    // *** FIX: Correct template literal usage ***
                     console.log(`Reconnect attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}...`);
-                    connectWebSocket().catch(err => console.error("Reconnect failed:", err)); // Attempt reconnect
+                    connectWebSocket().catch(err => console.error("Reconnect failed:", err));
                 }, RECONNECT_DELAY);
             } else {
                 console.error('Max WebSocket reconnect attempts reached.');
-                 reject(new Error('WebSocket disconnected permanently after retries.')); // Reject after max retries
+                reject(new Error('WebSocket disconnected permanently after retries.'));
             }
         };
     });
     return connectPromise;
 }
 
+// --- Rest of the functions (sendSignal, addMessageListener, etc.) remain the same ---
 export function sendSignal(action: string, payload?: any) {
     const message = JSON.stringify({ action, payload });
     if (ws && ws.readyState === WebSocket.OPEN) {
-        // console.log('WS Sending:', action, payload);
         ws.send(message);
     } else {
         console.warn('WebSocket not open, queueing message:', action);
         messageQueue.push(message);
-         // Attempt to connect if not already trying
         if(!connectPromise && (!ws || ws.readyState === WebSocket.CLOSED)){
             connectWebSocket().catch(err => console.error("Send connection attempt failed:", err));
         }
-
     }
 }
 
@@ -113,9 +110,6 @@ export function disconnectWebSocket() {
     }
     connectPromise = null;
     messageQueue = [];
-    reconnectAttempts = MAX_RECONNECT_ATTEMPTS; // Prevent auto-reconnect after manual disconnect
+    reconnectAttempts = MAX_RECONNECT_ATTEMPTS;
     console.log("WebSocket manually disconnected.");
 }
-
-// Initial connection attempt (optional, can be triggered by UI)
-// connectWebSocket().catch(err => console.error("Initial WebSocket connection failed:", err));

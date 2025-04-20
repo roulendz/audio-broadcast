@@ -88,7 +88,7 @@ export const config = {
                 { ip: webRtcListenIp, announcedIp: webRtcAnnouncedIp }
             ],
             enableUdp: true,
-            enableTcp: true, // Recommended fallback
+            enableTcp: true,
             preferUdp: true,
             initialAvailableOutgoingBitrate: 800000, // Adjust as needed
         },
