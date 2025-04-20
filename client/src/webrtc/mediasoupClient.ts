@@ -63,8 +63,8 @@ const handleSignalMessage = (action: string, payload: any) => {
             createRecvTransport(
                 payload.transportId,
                 payload.iceParameters as types.IceParameters,
-                payload.dtlsParameters as types.DtlsParameters
-                // payload.iceCandidates as types.IceCandidate[], // Keep commented if testing without initial candidates
+                payload.dtlsParameters as types.DtlsParameters,
+                payload.iceCandidates as types.IceCandidate[]
             );
             break;
 
@@ -107,11 +107,12 @@ async function loadDeviceIfNeeded() {
     try {
         console.log("Loading mediasoup device...");
         device = new mediasoupClient.Device();
-        console.log("Loading device with Router RTP Capabilities:", JSON.stringify(serverRouterCapabilities));
+        // console.log("Loading device with Router RTP Capabilities:", JSON.stringify(serverRouterCapabilities));
+        console.log("Loading device with Router RTP Capabilities:");
         await device.load({ routerRtpCapabilities: serverRouterCapabilities });
         console.log("Device loaded successfully.");
         if (device.rtpCapabilities) {
-           sendSignal('setRtpCapabilities', { rtpCapabilities: device.rtpCapabilities });
+            sendSignal('setRtpCapabilities', { rtpCapabilities: device.rtpCapabilities });
         } else {
             console.error("Device loaded but rtpCapabilities are missing!");
         }
@@ -142,53 +143,49 @@ export function getAvailableStreams(): { id: string; name: string }[] {
 async function createRecvTransport(
     transportId: string,
     iceParameters: types.IceParameters,
-    dtlsParameters: types.DtlsParameters
-    // iceCandidates: types.IceCandidate[] // Keep commented if testing without initial candidates
+    dtlsParameters: types.DtlsParameters,
+    iceCandidates: types.IceCandidate[]
 ) {
     if (!device) {
-        console.error("Device not loaded, cannot create transport.");
+        console.error("[createRecvTransport] Device not loaded, cannot create transport.");
         updateStatus("Device not ready");
         dispatchConnectionState('failed');
         return;
     }
     if (recvTransport && !recvTransport.closed) {
-        console.log("Closing existing RECV transport before creating new one.");
+        console.log("[createRecvTransport] Closing existing RECV transport before creating new one.");
         recvTransport.close();
     }
     recvTransport = null;
 
-    console.log("Creating RECV transport client-side:", transportId);
+    console.log("[createRecvTransport] Creating RECV transport client-side:", transportId);
     try {
         const transportOptions = {
             id: transportId,
             iceParameters,
-            iceCandidates: [], // Pass empty array if testing without initial candidates
+            iceCandidates,
             dtlsParameters,
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
                 { urls: 'stun:stun1.l.google.com:19302' }
             ]
         };
-        console.log("Attempting to create RecvTransport with options:", JSON.stringify(transportOptions, null, 2));
+        console.log("[createRecvTransport] Attempting to create RecvTransport with options:", JSON.stringify(transportOptions, null, 2));
         recvTransport = device.createRecvTransport(transportOptions);
 
         // --- Log state immediately after creation ---
-        console.log(`Transport created. ID: ${recvTransport.id}, Closed: ${recvTransport.closed}, ConnectionState: ${recvTransport.connectionState}, AppData:`, recvTransport.appData);
+        console.log(`[createRecvTransport] Transport object created. ID: ${recvTransport.id}, Closed: ${recvTransport.closed}, ConnectionState: ${recvTransport.connectionState}`);
         try {
-            // Attempt to access underlying PeerConnection - MIGHT NOT WORK OR CHANGE
-            // Accessing private members like _handler._pc is fragile and browser-dependent
             const pc = (recvTransport as any)._handler?._pc;
             if (pc) {
-                console.log('Underlying PC signalingState:', pc.signalingState);
-                console.log('Underlying PC iceConnectionState:', pc.iceConnectionState);
-                console.log('Underlying PC connectionState:', pc.connectionState);
-            } else {
-                 console.log('Could not access underlying PeerConnection object.');
+                console.log('[PC] Initial ICE connection state:', pc.iceConnectionState);
+                pc.oniceconnectionstatechange = () => {
+                    console.log('[PC] ICE connection state changed:', pc.iceConnectionState);
+                };
             }
-        } catch (e) { console.error("Error accessing PC internals:", e); }
-        // ------------------------------------------
+        } catch (e) { console.error("[createRecvTransport] Error accessing PC internals:", e); }
 
-        console.log("Attaching transport event listeners..."); // Log before attaching
+        console.log("[createRecvTransport] Attaching transport event listeners...");
 
         // --- Transport Events ---
         recvTransport.on('connect', (
@@ -196,55 +193,95 @@ async function createRecvTransport(
             callback: () => void,
             errback: (error: Error) => void
         ) => {
-            console.log("Transport 'connect' event fired. Sending DTLS params to server."); // Log inside handler
+            // *** ADDED LOG INSIDE 'connect' HANDLER ***
+            console.log("!!! TRANSPORT EVENT: 'connect' FIRED !!!");
+            console.log("[connect event] Sending DTLS params to server.");
             try {
-                if (!recvTransport) throw new Error("recvTransport became null unexpectedly");
+                if (!recvTransport) throw new Error("[connect event] recvTransport became null unexpectedly");
                 sendSignal('connectWebRtcTransport', {
                     transportId: recvTransport.id,
                     dtlsParameters: connectDtlsParams,
                 });
+                console.log("[connect event] Calling mediasoup-client callback().");
                 callback();
+                console.log("[connect event] mediasoup-client callback() returned.");
             } catch (error) {
-                console.error("Error sending connect signal:", error);
+                console.error("[connect event] Error sending connect signal:", error);
                 errback(error as Error);
             }
         });
 
+        recvTransport.on('connect', (
+            { dtlsParameters }: { dtlsParameters: types.DtlsParameters },
+            callback: () => void,
+            errback: (error: Error) => void
+        ) => {
+            console.log("!!! TRANSPORT EVENT: 'connect' FIRED !!!");
+            try {
+                sendSignal('connectWebRtcTransport', {
+                    transportId: recvTransport!.id,
+                    dtlsParameters,
+                });
+                console.log("[connect] Sent connectWebRtcTransport signal.");
+                callback();
+            } catch (err) {
+                console.error("[connect] Error during transport connect:", err);
+                errback(err as Error);
+            }
+        });
+
+
+
         recvTransport.on('connectionstatechange', (state: types.ConnectionState) => {
-            console.log(`Transport connection state changed: ${state}`); // Log inside handler
-            dispatchConnectionState(state);
+
+            console.log(`!!! TRANSPORT EVENT: 'connectionstatechange' FIRED - NEW STATE: ${state} !!!`);
+            dispatchConnectionState(state); // Update UI based on this state
 
             switch (state) {
+                case 'connecting':
+                    console.log("[connectionstatechange] Transport connecting...");
+                    break;
                 case 'connected':
-                    console.log("[connectionstatechange] Transport connected!");
                     const pendingStreamId = (window as any).pendingStreamId;
                     if (pendingStreamId) {
                         console.log("[connectionstatechange] Consuming pending stream:", pendingStreamId);
                         delete (window as any).pendingStreamId;
                         requestConsume(pendingStreamId);
+                    } else {
+                        console.log("[connectionstatechange] Transport connected, but no pending stream to consume.");
                     }
                     break;
                 case 'failed':
-                    console.error('Transport connection failed.');
-                    recvTransport?.close();
+                    console.error('[connectionstatechange] Transport connection failed.');
+                    recvTransport?.close(); // Close the transport on failure
                     break;
                 case 'disconnected':
-                    console.warn('Transport disconnected.');
+                    // A temporary disconnection, might recover. Often indicates network issues.
+                    console.warn('[connectionstatechange] Transport disconnected.');
                     break;
                 case 'closed':
-                    console.log('Transport closed.');
-                     if (recvTransport && recvTransport.id === transportId && recvTransport.closed) {
-                         recvTransport = null; // Clear ref if this specific transport closed
-                     }
-                    closeConsumer(); // Also close consumer if transport closes
+                    console.log('[connectionstatechange] Transport closed.');
+                    if (recvTransport && recvTransport.id === transportId && recvTransport.closed) {
+                        recvTransport = null; // Clear ref if this specific transport closed
+                    }
+                    closeConsumer(); // Ensure consumer is closed if transport closes
+                    break;
+                default:
+                    console.log(`[connectionstatechange] Unhandled state: ${state}`);
                     break;
             }
         });
-        console.log("Listeners attached."); // Log after attaching
-        console.log("RECV Transport created client-side."); // Log at the end
+        console.log("[createRecvTransport] Listeners attached.");
+        console.log("[createRecvTransport] RECV Transport setup complete on client-side.");
+        const pendingStreamId = (window as any).pendingStreamId;
+        if (pendingStreamId) {
+            console.log("[createRecvTransport] Immediately consuming pending stream:", pendingStreamId);
+            delete (window as any).pendingStreamId;
+            // requestConsume(pendingStreamId);
+        }
 
     } catch (error) {
-        console.error('Error creating Recv transport:', error);
+        console.error('[createRecvTransport] Error creating Recv transport:', error);
         updateStatus("Failed to create connection");
         dispatchConnectionState('failed');
     }
@@ -286,29 +323,19 @@ export function startConsuming(streamId: string) {
 }
 
 function requestConsume(streamId: string) {
-    // Double-check transport status before sending consume request
-    if (!recvTransport || recvTransport.connectionState !== 'connected') {
-        console.error(`Cannot consume stream ${streamId}, transport not ready or not connected (State: ${recvTransport?.connectionState}). Attempting recovery.`);
-        (window as any).pendingStreamId = streamId; // Store intended stream
-        // If transport is missing or failed/closed, request a new one
-         if (!recvTransport || ['failed', 'closed'].includes(recvTransport.connectionState)) {
-             console.log("Requesting new transport before consuming...");
-             sendSignal('createWebRtcTransport');
-         } else {
-             // If it's 'new'/'connecting'/'checking', just update status and wait
-             dispatchConnectionState(recvTransport?.connectionState || "connecting");
-         }
+    if (!recvTransport) {
+        console.error(`Cannot consume stream ${streamId}, no transport available`);
         return;
     }
     console.log(`Requesting to consume stream: ${streamId}`);
     updateStatus(`Requesting stream: ${getStreamNameById(streamId)}...`);
     // Ensure client RTP capabilities are available (should have been sent earlier)
     if (!device?.rtpCapabilities) {
-         console.error("Cannot consume: Client RTP Capabilities missing!");
-         dispatchConnectionState("failed");
-         return;
+        console.error("Cannot consume: Client RTP Capabilities missing!");
+        dispatchConnectionState("failed");
+        return;
     }
-    // Send consume request - server needs client rtpCapabilities, but we sent them with 'setRtpCapabilities'
+
     sendSignal('consume', { streamId });
 }
 

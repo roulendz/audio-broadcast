@@ -20,7 +20,7 @@ async function run() {
     const { worker, router } = await initializeMediasoup();
 
     // Setup GStreamer Ingest
-    // await setupGStreamerIngest(router);
+    await setupGStreamerIngest(router);
 
     // Create Express App (for serving client files via HTTPS)
     const app = express();

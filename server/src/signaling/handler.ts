@@ -82,11 +82,11 @@ async function handleCreateWebRtcTransport(ws: ExtendedWebSocket) {
     try {
         const transport = await router.createWebRtcTransport({
             ...config.mediasoup.webRtcTransport,
-            appData: { clientId: ws.clientId } // Associate transport with client
+            appData: { clientId: ws.clientId }
         });
 
         ws.transports.set(transport.id, transport);
-
+        console.log(`[SERVER] ICE Candidates for ${transport.id}:`, transport.iceCandidates);
         transport.observer.on('close', () => {
             console.log(`WebRtcTransport closed for client ${ws.clientId} [ID: ${transport.id}]`);
             ws.transports.delete(transport.id);
@@ -94,10 +94,10 @@ async function handleCreateWebRtcTransport(ws: ExtendedWebSocket) {
         });
 
         transport.observer.on('dtlsstatechange', (dtlsState) => {
-            console.log(`Transport ${transport.id} DTLS state changed to ${dtlsState}`);
+            console.log(`[SERVER] DTLS state: ${transport.id} DTLS state changed to ${dtlsState}`);
         if (dtlsState === 'failed' || dtlsState === 'closed') {
-            console.warn(`Transport ${transport.id} DTLS connection closed/failed.`);
-            // transport.close(); // Close transport on failure? Or let client retry?
+            console.warn(`[SERVER] DTLS state: ${transport.id} DTLS connection closed/failed.`);
+            transport.close();
         }
         });
 
@@ -129,7 +129,7 @@ async function handleConnectWebRtcTransport(ws: ExtendedWebSocket, payload: Conn
 
     try {
         await transport.connect({ dtlsParameters });
-        console.log(`WebRtcTransport connected for client ${ws.clientId} [ID: ${transportId}]`);
+        console.log(`[SERVER] WebRtcTransport connected for client ${ws.clientId} [ID: ${transportId}]`);
         // No specific response needed, client proceeds to consume after connect
     } catch (error: any) {
         console.error(`Error connecting WebRtcTransport ${transportId} for ${ws.clientId}:`, error);
